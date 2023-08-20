@@ -1,0 +1,50 @@
+version: '3.4'
+services:
+  elasticsearch:
+    image: 'docker.elastic.co/elasticsearch/elasticsearch:7.17.1'
+    container_name: elasticsearch
+    ports:
+      - '9200:9200'
+      - '9300:9300'
+    environment:
+      - "discovery.type=single-node"
+  kibana:
+    image: 'docker.elastic.co/kibana/kibana:7.17.1'
+    container_name: kibana
+    environment:
+      - ELASTICSEARCH_HOSTS=http://elasticsearch:9200
+    depends_on:
+      - elasticsearch
+    ports:
+      - '5601:5601'
+  log-shipper:
+    image: docker.elastic.co/beats/filebeat:7.17.1
+    container_name: log-shipper
+    depends_on:
+      - kibana
+    volumes:
+      - ./filebeat.yml:/usr/share/filebeat/filebeat.yml
+      - ./log:/postgres/log:Z
+  # Test postgres database
+  postgresql:
+    container_name: postgresql
+    image: 'registry.opensource.zalan.do/acid/spilo-14:2.1-p7'
+    ports:
+      - "2379:2379"
+      - "2380:2380"
+      - "5432:5432"
+      - "8008:8008"
+    tmpfs: /home/postgres/pgdata
+    volumes:
+      - ./log:/log:Z
+    environment:
+      SPILO_PROVIDER: 'local'
+      SCOPE: local-offer-store
+      PGVERSION: 13
+      USE_ADMIN: 'false'
+      PGPASSWORD_SUPERUSER: 'password'
+      SPILO_CONFIGURATION: |
+        postgresql:
+          parameters:
+            log_directory: /log
+            log_min_duration_statement: 0
