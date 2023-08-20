@@ -1,0 +1,69 @@
+#=========================== Filebeat inputs =============================
+
+filebeat.inputs:
+  - type: log
+    paths:
+      - /postgres/log/*.csv
+    processors:
+      - decode_csv_fields:
+          fields:
+            message: decoded_csv
+          separator: ","
+          ignore_missing: false
+          overwrite_keys: true
+          trim_leading_space: false
+          fail_on_error: true
+      - extract_array:
+          field: decoded_csv
+          mappings:
+            psql.timestamp: 0
+            psql.username: 1
+            psql.database: 2
+            psql.operation: 7
+            psql.log.level: 11
+            psql.message: 13
+            psql.details: 14
+      - dissect:
+          tokenizer: "duration: %{duration_ms} ms  statement: %{query}"
+          field: "psql.message"
+          target_prefix: "psql"
+          when:
+            and:
+              - has_fields: [ 'psql.message' ]
+              - equals:
+                  psql.log.level: LOG
+      - convert:
+          fields:
+            - { from: "psql.duration_ms", to: "psql.duration.ms", type: "double" }
+          ignore_missing: true
+          fail_on_error: false
+          when:
+            has_fields: [ 'psql.duration_ms' ]
+      - drop_fields:
+          fields: [
+            'message',
+            'psql.duration_ms'
+          ]
+          ignore_missing: true
+      - drop_fields:
+          fields: [
+            'psql.message'
+          ]
+          ignore_missing: true
+          when:
+            not:
+              equals:
+                psql.log.level: ERROR
+      - drop_event:
+          when:
+            not:
+              or:
+                - equals:
+                    psql.log.level: ERROR
+                - has_fields: [ 'psql.duration.ms' ]
+
+#================================ Outputs ======================================
+
+#-------------------------- Elasticsearch output -------------------------------
+output.elasticsearch:
+  hosts: ["elasticsearch:9200"]
